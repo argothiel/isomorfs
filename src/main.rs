@@ -1,34 +1,29 @@
+use clap::Parser;
 use std::env;
 use std::path::PathBuf;
 
+#[derive(Parser, Debug)]
+#[command(allow_hyphen_values = true, ignore_errors = true)]
 struct Arguments {
     source: PathBuf,
     target: PathBuf,
 }
 
-fn parse_config(args: Vec<String>) -> Arguments {
-    // mount.isomorfs SOURCE TARGET [-sfnv] [-N namespace] [-o options] [-t type.subtype]
-    let mut args_iter = args.into_iter();
-
-    let _program = args_iter.next();
-    let source = args_iter.next();
-    let target = args_iter.next();
-
-    Arguments {
-        source: source.unwrap().into(),
-        target: target.unwrap().into(),
-    }
+fn parse_config(args: Vec<String>) -> Result<Arguments, clap::Error> {
+    Arguments::try_parse_from(args)
 }
 
-fn process(args: Vec<String>) {
-    let config = parse_config(args);
+fn process(args: Vec<String>) -> Result<(), clap::Error> {
+    let config = parse_config(args)?;
 
     println!("{} => {}", config.source.display(), config.target.display());
+
+    Ok(())
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    process(args);
+    process(args).unwrap_or_else(|error| error.exit());
 }
 
 #[cfg(test)]
@@ -45,7 +40,7 @@ mod tests {
         ];
         let args = command.map(str::to_string).to_vec();
 
-        let config = parse_config(args);
+        let config = parse_config(args).unwrap();
 
         assert_eq!(config.source, Path::new("/images/installer image.iso"));
         assert_eq!(config.target, Path::new("/mnt/iso mount"));
@@ -56,7 +51,7 @@ mod tests {
         let command = ["isomorfs", "-v", "source", "target"];
         let args = command.map(str::to_string).to_vec();
 
-        let config = parse_config(args);
+        let config = parse_config(args).unwrap();
 
         assert_eq!(config.source, Path::new("-v"));
         assert_eq!(config.target, Path::new("source"));
@@ -73,7 +68,7 @@ mod tests {
         ];
         let args = command.map(str::to_string).to_vec();
 
-        let config = parse_config(args);
+        let config = parse_config(args).unwrap();
 
         assert_eq!(config.source, Path::new("/images/installer image.iso"));
         assert_eq!(config.target, Path::new("/mnt/iso mount"));
@@ -98,18 +93,22 @@ mod tests {
         ];
         let args = command.map(str::to_string).to_vec();
 
-        let config = parse_config(args);
+        let config = parse_config(args).unwrap();
 
         assert_eq!(config.source, Path::new("/images/installer image.iso"));
         assert_eq!(config.target, Path::new("/mnt/iso mount"));
     }
 
     #[test]
-    #[should_panic = "called `Option::unwrap()` on a `None` value"]
-    fn panic_at_wrong_number_of_arguments() {
+    fn reject_wrong_number_of_arguments() {
         let command = ["INVALID"];
         let args = command.map(str::to_string).to_vec();
 
-        parse_config(args);
+        let error = parse_config(args).unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
     }
 }
