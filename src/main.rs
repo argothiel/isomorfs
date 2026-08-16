@@ -52,6 +52,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_hyphenated_values_as_positionals() {
+        let command = ["isomorfs", "-v", "source", "target"];
+        let args = command.map(str::to_string).to_vec();
+
+        let config = parse_config(args);
+
+        assert_eq!(config.source, Path::new("-v"));
+        assert_eq!(config.target, Path::new("source"));
+    }
+
+    #[test]
     fn ignore_invalid_arguments() {
         let command = [
             "INVALID",
