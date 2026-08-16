@@ -1,8 +1,12 @@
-mount.isomorfs: main.rs
-	rustc -o $@ $^
+ifeq ($(MAKECMDGOALS),)
+  $(error Use 'make install' or 'make uninstall')
+endif
+
+.PHONY: install uninstall
 
 install:
-	install -m 755 mount.isomorfs /sbin/mount.isomorfs
+	cargo build --release
+	install -C -m 755 target/release/isomorfs /sbin/mount.isomorfs
 
 uninstall:
 	rm /sbin/mount.isomorfs

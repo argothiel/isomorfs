@@ -1,14 +1,13 @@
 Install:
 ```sh
-make
 make install
 ```
 
 Usage:
 ```sh
-mount -t isomorfs <filename> <mount point>
+mount -t isomorfs <ISO image> <mount point>
 ```
-e.g.
+E.g.:
 ```sh
 mount -t isomorfs MyFavoriteImage.iso /mnt/image
 ```
@@ -16,4 +15,14 @@ mount -t isomorfs MyFavoriteImage.iso /mnt/image
 Uninstall:
 ```sh
 make uninstall
+```
+
+Test:
+```
+cargo test
+```
+
+Build (dev):
+```
+cargo build
 ```
