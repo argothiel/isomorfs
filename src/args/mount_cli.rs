@@ -53,7 +53,7 @@ impl<'a> HelpRenderer<'a> {
     }
 
     fn render_usage_with_help(&self) -> (String, String) {
-        let usage = render_usage(&self.arguments);
+        let usage = render_usage_without_title(&self.arguments);
 
         let arguments_help = self.render_table_rows(&self.arguments.positionals);
         let all_options_help = self.render_table_rows(&self.arguments.all_options);
@@ -171,7 +171,7 @@ fn get_split_arguments(command: &Command) -> SplitArguments<'_> {
     split_arguments
 }
 
-fn render_usage(split_arguments: &SplitArguments) -> String {
+fn render_usage_without_title(split_arguments: &SplitArguments) -> String {
     let SplitArguments {
         bin,
         short_options,
