@@ -1,6 +1,10 @@
 use clap::builder::Str;
 use clap::{Arg, Command, Id};
 
+pub fn render_usage_with_help(command: &Command) -> (String, String) {
+    HelpRenderer::new(command).render_usage_with_help()
+}
+
 const SHORT_PLACEHOLDER: &str = "    ";
 
 struct SplitArguments<'a> {
@@ -192,8 +196,4 @@ fn render_usage(split_arguments: &SplitArguments) -> String {
         .join(" ");
 
     format!("{bin} {joined_positionals} [-{joined_flags}] {joined_options}")
-}
-
-pub fn render_usage_with_help(command: &Command) -> (String, String) {
-    HelpRenderer::new(command).render_usage_with_help()
 }
