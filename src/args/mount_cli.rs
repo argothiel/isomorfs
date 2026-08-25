@@ -26,7 +26,11 @@ struct HelpRenderer<'a> {
 
 impl std::fmt::Display for StylePreservingStr {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.0.ansi().fmt(formatter)
+        let padding = formatter
+            .width()
+            .unwrap_or(0)
+            .saturating_sub(self.display_width());
+        write!(formatter, "{}{:padding$}", self.0.ansi(), "")
     }
 }
 
@@ -52,6 +56,10 @@ impl StylePreservingStr {
     fn new() -> StylePreservingStr {
         StylePreservingStr(StyledStr::new())
     }
+
+    fn display_width(&self) -> usize {
+        self.0.to_string().chars().count()
+    }
 }
 
 impl<'a> SplitArguments<'a> {
@@ -73,8 +81,8 @@ impl<'a> SplitArguments<'a> {
 
         if short != 'h' {
             self.short_options.push(short);
-            self.all_options.push(arg);
         }
+        self.all_options.push(arg);
     }
 }
 
@@ -87,28 +95,32 @@ impl<'a> HelpRenderer<'a> {
     }
 
     fn render_usage_with_help(&self) -> (StylePreservingStr, StylePreservingStr) {
-        let usage = render_usage_without_title(&self.arguments);
+        let usage_text = self.render_usage_without_title(&self.arguments);
 
         let arguments_help = self.render_table_rows(&self.arguments.positionals);
         let all_options_help = self.render_table_rows(&self.arguments.all_options);
-        let help = StylePreservingStr::from(format!(
-            "{}Usage{}: {usage}
 
-Arguments:
+        let style = self.command.get_styles();
+        let usage = style.get_usage();
+        let header = style.get_header();
+        let help = StylePreservingStr::from(format!(
+            "{usage}Usage{usage:#}: {usage_text}
+
+{header}Arguments{header:#}:
 {arguments_help}
 
-Options:
+{header}Options{header:#}:
 {all_options_help}\n",
-            self.command.get_styles().get_usage().render(),
-            self.command.get_styles().get_usage().render_reset(),
         ));
 
-        (usage, help)
+        (usage_text, help)
     }
 
     fn render_short(&self, argument: &Arg) -> StylePreservingStr {
+        let literal = self.command.get_styles().get_literal();
+
         if let Some(s) = argument.get_short() {
-            return StylePreservingStr::from(format!("-{s}"));
+            return StylePreservingStr::from(format!("{literal}-{s}{literal:#}"));
         }
         if argument.get_long().is_some() {
             return StylePreservingStr::from(SHORT_PLACEHOLDER.to_owned());
@@ -117,9 +129,11 @@ Options:
     }
 
     fn render_long(&self, argument: &Arg) -> StylePreservingStr {
+        let literal = self.command.get_styles().get_literal();
+
         if let Some(l) = argument.get_long() {
             if argument.get_short().is_some() {
-                return StylePreservingStr::from(", --".to_string() + l);
+                return StylePreservingStr::from(format!(", {literal}--{l}{literal:#}"));
             }
             return StylePreservingStr::from("--".to_string() + l);
         }
@@ -127,8 +141,11 @@ Options:
     }
 
     fn render_suffix(&self, argument: &Arg) -> StylePreservingStr {
+        let placeholder = self.command.get_styles().get_placeholder();
+
         if argument.is_positional() {
-            return StylePreservingStr::from(argument.get_id().to_string());
+            let positional = argument.get_id().to_string();
+            return StylePreservingStr::from(format!("{placeholder}{positional}{placeholder:#}"));
         }
         if argument.get_num_args().unwrap_or_default().takes_values() {
             let names = argument.get_value_names().unwrap();
@@ -137,6 +154,7 @@ Options:
                     + names
                         .iter()
                         .map(Str::as_str)
+                        .map(|name| format!("{placeholder}{name}{placeholder:#}"))
                         .collect::<Vec<_>>()
                         .join(" ")
                         .as_str(),
@@ -170,7 +188,7 @@ Options:
         }
         let max_length = arguments
             .iter()
-            .map(|arg| self.render_label(arg).to_string().len())
+            .map(|arg| self.render_label(arg).display_width())
             .max()
             .unwrap();
 
@@ -180,17 +198,59 @@ Options:
             .collect();
         StylePreservingStr::from(rendered_rows.join("\n"))
     }
-}
 
-fn render_usage_value_option(arg: &Arg) -> StylePreservingStr {
-    let short = arg.get_short().unwrap();
+    fn render_usage_without_title(&self, split_arguments: &SplitArguments) -> StylePreservingStr {
+        let SplitArguments {
+            bin,
+            short_options,
+            options_with_value,
+            positionals,
+            all_options: _,
+        } = split_arguments;
 
-    let value = arg
-        .get_value_names()
-        .and_then(<[Str]>::first)
-        .map(Str::as_str)
-        .unwrap_or("VALUE");
-    StylePreservingStr::from(format!("[-{short} {value}]"))
+        let literal = self.command.get_styles().get_literal();
+        let placeholder = self.command.get_styles().get_placeholder();
+
+        let joined_flags: String = short_options.iter().collect();
+        let joined_options: String = options_with_value
+            .iter()
+            .copied()
+            .map(|option| self.render_usage_value_option(option))
+            .map(|option| StylePreservingStr::to_string(&option))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let joined_positionals: String = positionals
+            .iter()
+            .copied()
+            .map(Arg::get_id)
+            .map(Id::as_str)
+            .map(|positional| format!("{placeholder}{positional}{placeholder:#}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let mut writer = StylePreservingStr::new();
+        let _ = write!(
+            writer,
+            "{literal}{bin}{literal:#} {joined_positionals} [{literal}-{joined_flags}{literal:#}] {joined_options}"
+        );
+        writer
+    }
+
+    fn render_usage_value_option(&self, arg: &Arg) -> StylePreservingStr {
+        let literal = self.command.get_styles().get_literal();
+        let placeholder = self.command.get_styles().get_placeholder();
+
+        let short = arg.get_short().unwrap();
+
+        let value = arg
+            .get_value_names()
+            .and_then(<[Str]>::first)
+            .map(Str::as_str)
+            .unwrap_or("VALUE");
+        StylePreservingStr::from(format!(
+            "[{literal}-{short}{literal:#} {placeholder}{value}{placeholder:#}]"
+        ))
+    }
 }
 
 fn get_split_arguments(command: &Command) -> SplitArguments<'_> {
@@ -207,37 +267,4 @@ fn get_split_arguments(command: &Command) -> SplitArguments<'_> {
         split_arguments.add(arg)
     }
     split_arguments
-}
-
-fn render_usage_without_title(split_arguments: &SplitArguments) -> StylePreservingStr {
-    let SplitArguments {
-        bin,
-        short_options,
-        options_with_value,
-        positionals,
-        all_options: _,
-    } = split_arguments;
-
-    let joined_flags: String = short_options.iter().collect();
-    let joined_options: String = options_with_value
-        .iter()
-        .copied()
-        .map(render_usage_value_option)
-        .map(|option| StylePreservingStr::to_string(&option))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let joined_positionals: String = positionals
-        .iter()
-        .copied()
-        .map(Arg::get_id)
-        .map(Id::as_str)
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let mut writer = StylePreservingStr::new();
-    let _ = write!(
-        writer,
-        "{bin} {joined_positionals} [-{joined_flags}] {joined_options}"
-    );
-    writer
 }

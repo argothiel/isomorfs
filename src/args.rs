@@ -35,6 +35,7 @@ pub struct Arguments {
     #[arg(short = 'N', long, value_name = "ns")]
     namespace: Option<String>,
 
+    /// Use the specified mount options
     #[arg(short, value_name = "options", value_delimiter = ',')]
     options: Vec<String>,
 }
@@ -42,6 +43,7 @@ pub struct Arguments {
 impl Arguments {
     pub fn try_parse_from(args: Vec<String>) -> Result<Arguments, clap::error::Error> {
         let mut command = Arguments::command();
+
         command.build();
 
         let (usage, help) = render_usage_with_help(&command);
