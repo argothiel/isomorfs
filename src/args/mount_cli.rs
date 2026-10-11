@@ -1,6 +1,7 @@
 use clap::builder::{Str, StyledStr};
 use clap::{Arg, Command, Id};
 use std::fmt::Write;
+use std::iter;
 
 pub fn render_usage_with_help(command: &Command) -> (StyledStr, StyledStr) {
     let (usage, help) = HelpRenderer::new(command).render_usage_with_help();
@@ -95,7 +96,7 @@ impl<'a> HelpRenderer<'a> {
     }
 
     fn render_usage_with_help(&self) -> (StylePreservingStr, StylePreservingStr) {
-        let usage_text = self.render_usage_without_title(&self.arguments);
+        let usage_text = self.render_usage_without_title();
 
         let arguments_help = self.render_table_rows(&self.arguments.positionals);
         let all_options_help = self.render_table_rows(&self.arguments.all_options);
@@ -103,15 +104,28 @@ impl<'a> HelpRenderer<'a> {
         let style = self.command.get_styles();
         let usage = style.get_usage();
         let header = style.get_header();
-        let help = StylePreservingStr::from(format!(
-            "{usage}Usage{usage:#}: {usage_text}
+
+        let mut help = StylePreservingStr::new();
+        let _ = write!(help, "{usage}Usage{usage:#}: {usage_text}");
+
+        if !self.arguments.positionals.is_empty() {
+            let _ = write!(
+                help,
+                "
 
 {header}Arguments{header:#}:
-{arguments_help}
+{arguments_help}"
+            );
+        }
+        if !self.arguments.all_options.is_empty() {
+            let _ = write!(
+                help,
+                "
 
 {header}Options{header:#}:
-{all_options_help}\n",
-        ));
+{all_options_help}\n"
+            );
+        }
 
         (usage_text, help)
     }
@@ -147,20 +161,32 @@ impl<'a> HelpRenderer<'a> {
             let positional = argument.get_id().to_string();
             return StylePreservingStr::from(format!("{placeholder}{positional}{placeholder:#}"));
         }
-        if argument.get_num_args().unwrap_or_default().takes_values() {
-            let names = argument.get_value_names().unwrap();
-            return StylePreservingStr::from(
-                " ".to_string()
-                    + names
-                        .iter()
-                        .map(Str::as_str)
-                        .map(|name| format!("{placeholder}{name}{placeholder:#}"))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                        .as_str(),
-            );
+
+        if argument.get_action().takes_values() {
+            let args_range = argument.get_num_args().unwrap_or_default();
+            let names = argument.get_value_names().unwrap_or_default();
+            let min_values = args_range.min_values();
+            let max_values = args_range.max_values();
+
+            let required = names
+                .iter()
+                .map(Str::as_str)
+                .chain(iter::repeat("VALUE"))
+                .take(min_values)
+                .map(|arg| format!("{placeholder}{arg}{placeholder:#}"));
+            let optional = names
+                .iter()
+                .skip(min_values)
+                .map(Str::as_str)
+                .chain(iter::repeat("VALUE"))
+                .take(max_values - min_values)
+                .map(|arg| format!("[{placeholder}{arg}{placeholder:#}]"));
+
+            let suffixes = required.chain(optional).collect::<Vec<_>>().join(" ");
+
+            return StylePreservingStr::from(format!(" {suffixes}"));
         }
-        StylePreservingStr::from(" ".to_string())
+        StylePreservingStr::from("".to_string())
     }
 
     fn render_description(&self, argument: &Arg) -> StylePreservingStr {
@@ -174,9 +200,9 @@ impl<'a> HelpRenderer<'a> {
         StylePreservingStr::from(format!("  {short}{long}{suffix}"))
     }
 
-    fn render_row(&self, argument: &Arg, length: usize) -> StylePreservingStr {
+    fn render_row(&self, argument: &Arg, label_width: usize) -> StylePreservingStr {
         StylePreservingStr::from(format!(
-            "{:length$}  {}",
+            "{:label_width$}  {}",
             self.render_label(argument),
             self.render_description(argument)
         ))
@@ -199,14 +225,14 @@ impl<'a> HelpRenderer<'a> {
         StylePreservingStr::from(rendered_rows.join("\n"))
     }
 
-    fn render_usage_without_title(&self, split_arguments: &SplitArguments) -> StylePreservingStr {
+    fn render_usage_without_title(&self) -> StylePreservingStr {
         let SplitArguments {
             bin,
             short_options,
             options_with_value,
             positionals,
             all_options: _,
-        } = split_arguments;
+        } = &self.arguments;
 
         let literal = self.command.get_styles().get_literal();
         let placeholder = self.command.get_styles().get_placeholder();
@@ -229,10 +255,17 @@ impl<'a> HelpRenderer<'a> {
             .join(" ");
 
         let mut writer = StylePreservingStr::new();
-        let _ = write!(
-            writer,
-            "{literal}{bin}{literal:#} {joined_positionals} [{literal}-{joined_flags}{literal:#}] {joined_options}"
-        );
+        let _ = write!(writer, "{literal}{bin}{literal:#}");
+
+        if !joined_positionals.is_empty() {
+            let _ = write!(writer, " {joined_positionals}");
+        }
+        if !joined_flags.is_empty() {
+            let _ = write!(writer, " [{literal}-{joined_flags}{literal:#}]");
+        }
+        if !joined_options.is_empty() {
+            let _ = write!(writer, " {joined_options}");
+        }
         writer
     }
 
@@ -240,7 +273,9 @@ impl<'a> HelpRenderer<'a> {
         let literal = self.command.get_styles().get_literal();
         let placeholder = self.command.get_styles().get_placeholder();
 
-        let short = arg.get_short().unwrap();
+        let short = arg
+            .get_short()
+            .expect("all the non-positional arguments must support a short flag");
 
         let value = arg
             .get_value_names()
@@ -255,16 +290,58 @@ impl<'a> HelpRenderer<'a> {
 
 fn get_split_arguments(command: &Command) -> SplitArguments<'_> {
     let mut split_arguments = SplitArguments {
-        bin: "",
+        bin: command.get_bin_name().unwrap_or(command.get_name()),
         short_options: Vec::new(),
         options_with_value: Vec::new(),
         positionals: Vec::new(),
         all_options: Vec::new(),
     };
 
-    split_arguments.bin = command.get_bin_name().unwrap_or(command.get_name());
     for arg in command.get_arguments() {
         split_arguments.add(arg)
     }
     split_arguments
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_usage_with_help;
+    use anstyle::AnsiColor;
+    use clap::builder::Styles;
+    use clap::{Command, arg};
+
+    #[test]
+    fn renders_usage_with_help_with_colors() {
+        let header = AnsiColor::Yellow.on(AnsiColor::Green);
+        let usage = AnsiColor::Green.on(AnsiColor::Red);
+        let literal = AnsiColor::Red.on(AnsiColor::Blue);
+        let placeholder = AnsiColor::Blue.on(AnsiColor::Yellow);
+
+        let styles = Styles::styled()
+            .header(header)
+            .usage(usage)
+            .literal(literal)
+            .placeholder(placeholder);
+
+        let c = Command::new("abc")
+            .styles(styles)
+            .args([arg!(verbose: -v "verbose desc")]);
+        let (rendered_usage, rendered_help) = render_usage_with_help(&c);
+
+        assert_eq!(
+            rendered_usage,
+            format!("{literal}abc{literal:#} [{literal}-v{literal:#}]").into()
+        );
+        assert_eq!(
+            rendered_help,
+            format!(
+                "{usage}Usage{usage:#}: {literal}abc{literal:#} [{literal}-v{literal:#}]
+
+{header}Options{header:#}:
+  {literal}-v{literal:#}  verbose desc
+"
+            )
+            .into()
+        );
+    }
 }

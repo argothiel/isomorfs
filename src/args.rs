@@ -41,7 +41,7 @@ pub struct Arguments {
 }
 
 impl Arguments {
-    pub fn try_parse_from(args: Vec<String>) -> Result<Arguments, clap::error::Error> {
+    pub fn try_parse_from(arguments: Vec<String>) -> Result<Arguments, clap::error::Error> {
         let mut command = Arguments::command();
 
         command.build();
@@ -51,13 +51,13 @@ impl Arguments {
         command = command.override_usage(usage);
         command = command.override_help(help);
 
-        let matches = command.try_get_matches_from(args)?;
+        let matches = command.try_get_matches_from(arguments)?;
         Arguments::from_arg_matches(&matches)
     }
 }
 
-pub fn parse_config(args: Vec<String>) -> Result<Arguments, clap::Error> {
-    Arguments::try_parse_from(args)
+pub fn parse_config(arguments: Vec<String>) -> Result<Arguments, clap::Error> {
+    Arguments::try_parse_from(arguments)
 }
 
 #[cfg(test)]
@@ -72,23 +72,23 @@ mod tests {
             "/images/installer image.iso",
             "/mnt/iso mount",
         ];
-        let args = command.map(str::to_string).to_vec();
+        let argv = command.map(str::to_string).to_vec();
 
-        let config = parse_config(args).unwrap();
+        let arguments = parse_config(argv).unwrap();
 
-        assert_eq!(config.source, Path::new("/images/installer image.iso"));
-        assert_eq!(config.target, Path::new("/mnt/iso mount"));
+        assert_eq!(arguments.source, Path::new("/images/installer image.iso"));
+        assert_eq!(arguments.target, Path::new("/mnt/iso mount"));
     }
 
     #[test]
     fn parse_hyphenated_values_as_positionals() {
         let command = ["isomorfs", "-w", "source", "target"];
-        let args = command.map(str::to_string).to_vec();
+        let argv = command.map(str::to_string).to_vec();
 
-        let config = parse_config(args).unwrap();
+        let arguments = parse_config(argv).unwrap();
 
-        assert_eq!(config.source, Path::new("-w"));
-        assert_eq!(config.target, Path::new("source"));
+        assert_eq!(arguments.source, Path::new("-w"));
+        assert_eq!(arguments.target, Path::new("source"));
     }
 
     #[test]
@@ -100,16 +100,16 @@ mod tests {
             "foo",
             "-bar",
         ];
-        let args = command.map(str::to_string).to_vec();
+        let argv = command.map(str::to_string).to_vec();
 
-        let config = parse_config(args).unwrap();
+        let arguments = parse_config(argv).unwrap();
 
-        assert_eq!(config.source, Path::new("/images/installer image.iso"));
-        assert_eq!(config.target, Path::new("/mnt/iso mount"));
+        assert_eq!(arguments.source, Path::new("/images/installer image.iso"));
+        assert_eq!(arguments.target, Path::new("/mnt/iso mount"));
     }
 
     #[test]
-    fn ignore_options() {
+    fn parse_source_and_target() {
         let command = [
             "mount.isomorfs",
             "/images/installer image.iso",
@@ -125,20 +125,20 @@ mod tests {
             "-t",
             "isomorfs.subtype",
         ];
-        let args = command.map(str::to_string).to_vec();
+        let argv = command.map(str::to_string).to_vec();
 
-        let config = parse_config(args).unwrap();
+        let arguments = parse_config(argv).unwrap();
 
-        assert_eq!(config.source, Path::new("/images/installer image.iso"));
-        assert_eq!(config.target, Path::new("/mnt/iso mount"));
+        assert_eq!(arguments.source, Path::new("/images/installer image.iso"));
+        assert_eq!(arguments.target, Path::new("/mnt/iso mount"));
     }
 
     #[test]
-    fn reject_wrong_number_of_arguments() {
+    fn reject_missing_arguments() {
         let command = ["INVALID"];
-        let args = command.map(str::to_string).to_vec();
+        let arguments = command.map(str::to_string).to_vec();
 
-        let error = parse_config(args).unwrap_err();
+        let error = parse_config(arguments).unwrap_err();
 
         assert_eq!(
             error.kind(),
